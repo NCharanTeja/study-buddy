@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+.chroma/
+*.pdf
+.DS_Store
+.vscode/
+.idea/
+.freebuff/
+.streamlit/secrets.toml
+*.log
