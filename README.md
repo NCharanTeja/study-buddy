@@ -1,6 +1,6 @@
 # 📚 Study Buddy — Multi-Agent RAG Assistant
 
-An AI study assistant that lets you upload class notes (PDFs) and interact with three specialized agents built on top of a Retrieval-Augmented Generation (RAG) pipeline.
+An AI study assistant that lets you upload your study material and interact with three specialized agents built on top of a Retrieval-Augmented Generation (RAG) pipeline.
 
 - **💬 Q&A Agent** — Ask questions and get answers grounded in your notes (with source citations).
 - **📝 Summarizer Agent** — Get structured, bullet-pointed summaries of any topic.
@@ -12,8 +12,8 @@ An AI study assistant that lets you upload class notes (PDFs) and interact with 
 
 ```
                  ┌────────────────┐
-   PDF upload ─► │ Chunker (word- │
-                 │ level, 400/50) │
+   Document     │ Chunker (word- │
+   upload ────► │ level, 400/50) │
                  └───────┬────────┘
                          ▼
                  ┌────────────────────────┐
@@ -48,7 +48,7 @@ An AI study assistant that lets you upload class notes (PDFs) and interact with 
 | Embeddings | sentence-transformers (`all-MiniLM-L6-v2`, runs on CPU) | Free (local) |
 | Vector DB | ChromaDB | Free (local) |
 | LLM | Groq API — `openai/gpt-oss-120b` (configurable via `GROQ_MODEL`) | Free tier |
-| PDF parsing | pypdf (+ PyMuPDF + RapidOCR fallback for scanned/image PDFs) | Free |
+| Document parsing | PDF (pypdf + PyMuPDF + RapidOCR fallback for scanned/image PDFs), Word (python-docx), TXT/Markdown, CSV/TSV, Excel (openpyxl) | Free |
 
 ## Local setup
 
@@ -76,7 +76,7 @@ cp .env.example .env
 streamlit run app.py
 ```
 
-The app opens at `http://localhost:8501`. Upload any PDF (a textbook chapter, class notes, an old paper) and click through the tabs. Scanned/image-only PDFs are handled automatically via OCR (400 DPI rendering + RapidOCR).
+The app opens at `http://localhost:8501`. Upload any supported document — PDF (a textbook chapter, class notes, an old paper), Word, TXT, Markdown, CSV or Excel — and click through the tabs. Scanned/image-only PDFs are handled automatically via OCR (400 DPI rendering + RapidOCR).
 
 ## 🌍 Deploy to the web (no installs for your users)
 
@@ -98,7 +98,8 @@ study-buddy/
 │   ├── summarizer_agent.py     # Structured summarization
 │   └── quiz_agent.py           # Quiz generation
 └── rag/
-    ├── chunker.py              # PDF → chunks (text layer + OCR fallback @ 400 DPI)
+    ├── chunker.py              # Multi-format extraction → chunks (PDF text layer + OCR,
+    │                           #   DOCX, TXT/MD, CSV/TSV, XLSX)
     ├── embedder.py             # sentence-transformers wrapper
     └── vectorstore.py          # ChromaDB persistent store
 ```

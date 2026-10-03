@@ -7,7 +7,7 @@ import streamlit as st
 import config
 from groq import Groq, AuthenticationError, RateLimitError, APIStatusError, APIConnectionError
 
-from rag.chunker import chunk_pdf
+from rag.chunker import chunk_file, SUPPORTED_EXTENSIONS
 from rag.embedder import Embedder
 from rag.vectorstore import VectorStore
 from agents.retriever_agent import RetrieverAgent
@@ -46,19 +46,6 @@ def show_llm_error(e):
         st.error(f"⚠️ Unexpected error: `{e}`")
 
 
-def groq_check():
-    """Ping Groq with a lightweight request to validate the API key.
-
-    Returns (True, None) if the key is accepted, else (False, exception).
-    """
-    try:
-        client = Groq(api_key=config.GROQ_API_KEY, timeout=10)
-        client.models.list()
-        return True, None
-    except Exception as e:
-        return False, e
-
-
 # Check API key (from .env locally, or Streamlit secrets on cloud)
 if not config.GROQ_API_KEY:
     st.error("⚠️ GROQ_API_KEY not set. Copy `.env.example` to `.env` and add your free Groq key from https://console.groq.com/keys")
@@ -77,16 +64,19 @@ if "vectorstore" not in st.session_state:
 # Sidebar: upload
 with st.sidebar:
     st.header("📄 Your material")
-    uploaded = st.file_uploader("Upload a PDF (class notes, textbook chapter, etc.)", type=["pdf"])
-    if uploaded and st.button("Process PDF", type="primary"):
+    uploaded = st.file_uploader(
+        "Upload study material (PDF, Word, TXT, Markdown, CSV or Excel)",
+        type=list(SUPPORTED_EXTENSIONS),
+    )
+    if uploaded and st.button("Process document", type="primary"):
         with st.spinner("Chunking + embedding..."):
             try:
-                chunks, ocr_used = chunk_pdf(uploaded)
+                chunks, ocr_used = chunk_file(uploaded, filename=uploaded.name)
                 if not chunks:
                     st.error(
-                        "❌ **No text could be extracted from this PDF — even OCR found "
-                        "nothing readable.** It may be empty, corrupted, or contain only "
-                        "very low-quality images."
+                        "❌ **No text could be extracted from this file.** It may be empty, "
+                        "corrupted, password-protected, or — for PDFs — contain only very "
+                        "low-quality images."
                     )
                 else:
                     st.session_state.vectorstore.add_chunks(chunks, source=uploaded.name)
@@ -102,8 +92,8 @@ with st.sidebar:
                         st.success(f"✅ Indexed {len(chunks)} chunks from {uploaded.name}")
             except Exception as e:
                 st.error(
-                    "⚠️ **Couldn't process this PDF.** It may be corrupted, truncated, "
-                    "or password-protected.\n\nDetails: `" + str(e)[:200] + "`"
+                    "⚠️ **Couldn't process this file.** It may be corrupted, truncated, "
+                    "password-protected, or an unsupported format.\n\nDetails: `" + str(e)[:200] + "`"
                 )
 
     if st.session_state.sources:
@@ -117,29 +107,6 @@ with st.sidebar:
         st.session_state.sources = []
         st.rerun()
 
-    st.divider()
-    st.subheader("🔌 Groq connection")
-
-    def check_groq():
-        with st.spinner("Pinging Groq..."):
-            ok, err = groq_check()
-        st.session_state.groq_status = "ok" if ok else "fail"
-        st.session_state.groq_err = err
-
-    # One automatic check per browser session, so a bad key is caught immediately.
-    if "groq_status" not in st.session_state:
-        check_groq()
-
-    if st.session_state.groq_status == "ok":
-        st.success("✅ Groq key works — ask away!")
-    else:
-        st.warning("⚠️ Groq connection failed — asking questions will not work.")
-        with st.expander("Why?"):
-            show_llm_error(st.session_state.groq_err)
-
-    if st.button("🔄 Re-test connection"):
-        check_groq()
-        st.rerun()
 
 # Main: three agent tabs
 tab1, tab2, tab3 = st.tabs(["💬 Ask (Q&A Agent)", "📝 Summarize Agent", "❓ Quiz Agent"])
@@ -169,7 +136,7 @@ with tab1:
     q = st.text_input("Your question", placeholder="e.g., What is polymorphism in OOP?")
     if st.button("Ask", key="ask_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a PDF first (see sidebar).")
+            st.warning("Upload a document first (see sidebar).")
         elif not q.strip():
             st.warning("Type a question.")
         else:
@@ -188,7 +155,7 @@ with tab2:
     topic = st.text_input("Topic or section to summarize", placeholder="e.g., Neural networks")
     if st.button("Summarize", key="sum_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a PDF first.")
+            st.warning("Upload a document first.")
         elif not topic.strip():
             st.warning("Type a topic.")
         else:
@@ -207,7 +174,7 @@ with tab3:
     n = st.slider("Number of questions", 3, 10, 5)
     if st.button("Generate quiz", key="quiz_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a PDF first.")
+            st.warning("Upload a document first.")
         elif not topic.strip():
             st.warning("Type a topic.")
         else:

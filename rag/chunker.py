@@ -1,6 +1,20 @@
-"""PDF text extraction and chunking, with OCR fallback for scanned PDFs."""
+"""Document text extraction and chunking.
+
+Supported formats:
+  - PDF (text layer, with OCR fallback at 400 DPI for scanned/image-only files)
+  - Word (.docx) — paragraphs + tables
+  - Plain text (.txt) and Markdown (.md)
+  - CSV / TSV (rows joined into "cell | cell" lines)
+  - Excel (.xlsx) — every sheet, rows joined into "cell | cell" lines
+"""
+import io
+
 from pypdf import PdfReader
 
+SUPPORTED_EXTENSIONS = ("pdf", "docx", "txt", "md", "csv", "tsv", "xlsx")
+
+
+# ---------------------------------------------------------------- PDF
 
 def _text_layer_pages(file):
     """Extract per-page text from the PDF's embedded text layer (fast path)."""
@@ -71,6 +85,72 @@ def chunk_pdf(file, chunk_size=400, overlap=50):
             pages = []
 
     text = "\n".join(pages)
+    return _chunk_words(text, chunk_size, overlap), ocr_used
+
+
+# ------------------------------------------------- Word / text / CSV / Excel
+
+def _extract_docx(file):
+    """Word document: paragraphs plus table rows (cells joined with ' | ')."""
+    from docx import Document
+
+    doc = Document(io.BytesIO(file.read()))
+    parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _extract_text(file):
+    """Plain text / Markdown, tolerating UTF-8 BOM and legacy encodings."""
+    data = file.read()
+    for encoding in ("utf-8-sig", "latin-1"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _extract_delimited(file, delimiter=","):
+    """CSV/TSV: every non-empty row becomes a 'cell | cell' line."""
+    import csv
+
+    text = _extract_text(file)
+    lines = []
+    for row in csv.reader(io.StringIO(text), delimiter=delimiter):
+        cells = [c.strip() for c in row]
+        if any(cells):
+            lines.append(" | ".join(cells))
+    return "\n".join(lines)
+
+
+def _extract_xlsx(file):
+    """Excel workbook: every sheet, non-empty rows as 'cell | cell' lines."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(file.read()), read_only=True, data_only=True)
+    parts = []
+    for ws in wb.worksheets:
+        sheet_lines = []
+        for row in ws.iter_rows(values_only=True):
+            cells = ["" if v is None else str(v).strip() for v in row]
+            if any(cells):
+                sheet_lines.append(" | ".join(cells))
+        if sheet_lines:
+            parts.append(f"[Sheet: {ws.title}]")
+            parts.extend(sheet_lines)
+    wb.close()
+    return "\n".join(parts)
+
+
+# ------------------------------------------------------------- dispatcher
+
+def _chunk_words(text, chunk_size=400, overlap=50):
+    """Split text into overlapping word chunks (shared by every format)."""
     words = text.split()
     chunks = []
     step = max(1, chunk_size - overlap)
@@ -80,4 +160,44 @@ def chunk_pdf(file, chunk_size=400, overlap=50):
             chunks.append(chunk)
         if i + chunk_size >= len(words):
             break
-    return chunks, ocr_used
+    return chunks
+
+
+def chunk_file(file, filename=None, chunk_size=400, overlap=50):
+    """Extract text from any supported document and split into word chunks.
+
+    Args:
+        file: file-like object with .read() (e.g. Streamlit UploadedFile).
+        filename: original filename (used to pick the extractor); defaults to
+            file.name when available.
+        chunk_size: target number of words per chunk.
+        overlap: number of overlapping words between consecutive chunks.
+
+    Returns:
+        (chunks, ocr_used): list of non-empty text chunks, and whether OCR
+        was needed (always False for non-PDF formats).
+
+    Raises:
+        ValueError: if the file extension is not supported.
+    """
+    name = (filename or getattr(file, "name", "") or "").lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+
+    if ext == "pdf":
+        return chunk_pdf(file, chunk_size=chunk_size, overlap=overlap)
+    if ext == "docx":
+        text = _extract_docx(file)
+    elif ext in ("txt", "md", "markdown"):
+        text = _extract_text(file)
+    elif ext == "csv":
+        text = _extract_delimited(file, delimiter=",")
+    elif ext == "tsv":
+        text = _extract_delimited(file, delimiter="\t")
+    elif ext == "xlsx":
+        text = _extract_xlsx(file)
+    else:
+        raise ValueError(
+            f"Unsupported file type: .{ext or 'unknown'} — supported formats: "
+            + ", ".join(SUPPORTED_EXTENSIONS)
+        )
+    return _chunk_words(text, chunk_size, overlap), False
