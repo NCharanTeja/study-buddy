@@ -69,7 +69,7 @@ with st.sidebar:
         type=list(SUPPORTED_EXTENSIONS),
     )
     if uploaded and st.button("Process document", type="primary"):
-        with st.spinner("Chunking + embedding..."):
+        with st.spinner("Analyzing the document"):
             try:
                 chunks, ocr_used = chunk_file(uploaded, filename=uploaded.name)
                 if not chunks:
