@@ -18,6 +18,12 @@ st.set_page_config(page_title="Study Buddy", page_icon="📚", layout="wide")
 st.title("📚 Study Buddy")
 st.caption("Multi-agent study assistant • Upload notes → Ask, summarize, or quiz yourself")
 
+# The sidebar is no longer used — hide it so the layout stays clean.
+st.markdown(
+    "<style>[data-testid='stSidebar'] { display: none; }</style>",
+    unsafe_allow_html=True,
+)
+
 
 def show_llm_error(e):
     """Display a friendly, actionable message for common Groq API failures."""
@@ -61,11 +67,13 @@ if "vectorstore" not in st.session_state:
         st.session_state.sources = existing
         st.session_state.docs_loaded = len(existing) > 0
 
-# Sidebar: upload
-with st.sidebar:
-    st.header("📄 Your material")
+# Main page: document upload (always visible — no sidebar needed)
+upload_col, docs_col = st.columns([3, 2], border=True)
+
+with upload_col:
+    st.markdown("#### 📄 Upload your material")
     uploaded = st.file_uploader(
-        "Upload study material (PDF, Word, TXT, Markdown, CSV or Excel)",
+        "PDF, Word, TXT, Markdown, CSV or Excel",
         type=list(SUPPORTED_EXTENSIONS),
     )
     if uploaded and st.button("Process document", type="primary"):
@@ -96,11 +104,13 @@ with st.sidebar:
                     "password-protected, or an unsupported format.\n\nDetails: `" + str(e)[:200] + "`"
                 )
 
+with docs_col:
+    st.markdown("#### 🗂️ Loaded documents")
     if st.session_state.sources:
-        st.markdown("**Loaded documents:**")
         for s in st.session_state.sources:
             st.markdown(f"- {s}")
-
+    else:
+        st.info("Nothing indexed yet — upload a file on the left.")
     if st.button("🗑️ Clear all documents"):
         st.session_state.vectorstore.reset()
         st.session_state.docs_loaded = False
@@ -136,7 +146,7 @@ with tab1:
     q = st.text_input("Your question", placeholder="e.g., What is polymorphism in OOP?")
     if st.button("Ask", key="ask_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a document first (see sidebar).")
+            st.warning("Upload a document first (in the panel above).")
         elif not q.strip():
             st.warning("Type a question.")
         else:
@@ -155,7 +165,7 @@ with tab2:
     topic = st.text_input("Topic or section to summarize", placeholder="e.g., Neural networks")
     if st.button("Summarize", key="sum_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a document first.")
+            st.warning("Upload a document first (in the panel above).")
         elif not topic.strip():
             st.warning("Type a topic.")
         else:
@@ -174,7 +184,7 @@ with tab3:
     n = st.slider("Number of questions", 3, 10, 5)
     if st.button("Generate quiz", key="quiz_btn"):
         if not st.session_state.docs_loaded:
-            st.warning("Upload a document first.")
+            st.warning("Upload a document first (in the panel above).")
         elif not topic.strip():
             st.warning("Type a topic.")
         else:
